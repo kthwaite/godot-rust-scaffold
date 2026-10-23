@@ -111,10 +111,21 @@ code; the final Cargo build checks compilation.
 
 ## Development
 
-Install the project and development dependencies (including pytest), then run the
-test suite:
+Install the project and development dependencies (including pytest and pytest-cov),
+then run the test suite:
 
 ```sh
 uv sync
 uv run pytest
 ```
+
+Measure statement and branch coverage, including uncovered line numbers:
+
+```sh
+uv run pytest --cov=godot_rust_scaffold --cov-branch --cov-report=term-missing
+```
+
+Tests exercise CLI prompts, validation, generated project settings, destination
+protection, and failure recovery using temporary directories. Registry responses
+and external commands are mocked; the suite needs no network, Git, Cargo, or Godot.
+It does not replace building and running a generated project with the real tools.
