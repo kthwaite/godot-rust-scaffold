@@ -23,13 +23,31 @@ Or directly from git:
 uv tool install git+https://github.com/kthwaite/godot-rust-scaffold
 ```
 
-By default the CLI runs interactively, prompting for a name, destination, and confirmation; existing project directories won't be overwritten.
+By default the CLI runs interactively, prompting for a name, destination, renderer,
+precision, API version, and confirmation; existing project directories won't be
+overwritten.
 
 ```sh
 godot-rust-scaffold
 ```
 
-Noninteractive mode (parent dir must already exist):
+Use the ↑/↓ arrow keys to highlight a choice, then Enter to select it. Each picker
+starts on its default; Ctrl+C cancels setup before any project files are created.
+
+- **Renderer:** `forward+`, `mobile`, or `compatibility` (default).
+- **Precision:** `single` (f32, default) or `double` (f64).
+- **Godot API version:** versions supported by the selected `godot` crate, fetched
+  from crates.io. Defaults to `4.2` when supported, otherwise the lowest supported
+  version of at least 4.2.
+
+Explicit `--renderer`, `--double-precision`, and `--godot-version` options skip
+their respective selection prompts. Double precision also prompts for a custom
+Godot executable unless `--godot-bin` is supplied; the engine is verified before
+creation. Use `--godot-version` to request a custom engine patch version that isn't
+in the prebuilt API list.
+
+Noninteractive mode skips all prompts and keeps the defaults for omitted settings
+(parent dir must already exist):
 
 ```sh
 godot-rust-scaffold "My Game" --parent ~/Projects --yes
@@ -37,8 +55,9 @@ godot-rust-scaffold "My Game" --parent ~/Projects --yes
 
 ## Rendering backend
 
-Use `--renderer` in either interactive or noninteractive mode. Compatibility
-remains the default; unknown choices are rejected before setup starts.
+Use `--renderer` in either interactive or noninteractive mode, or choose from the
+interactive list. Compatibility remains the default; unknown choices are rejected
+before setup starts.
 
 ```sh
 godot-rust-scaffold "My Game" --parent ~/Projects --yes --renderer forward+

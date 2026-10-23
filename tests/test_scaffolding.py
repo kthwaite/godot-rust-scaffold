@@ -7,6 +7,9 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
+from prompt_toolkit.application import create_app_session
+from prompt_toolkit.input import create_pipe_input
+from prompt_toolkit.output import DummyOutput
 from typer.testing import CliRunner
 
 from godot_rust_scaffold.cli import Renderer, app, create_project
@@ -42,6 +45,14 @@ def external_tools():
         ) as command,
     ):
         yield command
+
+
+@pytest.fixture
+def picker_input():
+    # Exercise the actual picker key bindings without requiring a terminal.
+    with create_pipe_input() as pipe:
+        with create_app_session(input=pipe, output=DummyOutput()):
+            yield pipe
 
 
 def invoke(parent, *options, name="My Game"):
@@ -172,18 +183,102 @@ def test_double_precision_persists_custom_api_and_escaped_engine_path(
     assert json.loads(extension["configuration"]["compatibility_minimum"]) == "4.6.2"
 
 
-def test_interactive_prompts_create_project_in_selected_parent(tmp_path):
+@pytest.mark.parametrize("precision", ["single", "double"])
+def test_interactive_selections_control_generated_project(
+    tmp_path, precision, picker_input
+):
+    engine = tmp_path / "custom-godot"
+    engine_input = f"{engine}\n" if precision == "double" else ""
+    precision_keys = "\x1b[B" if precision == "double" else ""
+    picker_input.send_text(f"\x1b[A\r{precision_keys}\r\x1b[B\x1b[B\r")
     result = CliRunner().invoke(
-        app, ["--renderer", "mobile"], input=f"  Interactive Game  \n{tmp_path}\ny\n"
+        app,
+        [],
+        input=f"  Interactive Game  \n{tmp_path}\n{engine_input}y\n",
     )
 
     assert result.exit_code == 0, result.output
-    project = read_godot_config(tmp_path / "interactive-game/godot/project.godot")
+    root = tmp_path / "interactive-game"
+    project = read_godot_config(root / "godot/project.godot")
     assert json.loads(project["application"]["config/name"]) == "Interactive Game"
     assert json.loads(project["rendering"]["renderer/rendering_method"]) == "mobile"
+    extension = read_godot_config(root / "godot/game.gdextension")
+    assert json.loads(extension["configuration"]["compatibility_minimum"]) == "4.6.2"
+    dependency = read_toml(root / "rust/Cargo.toml")["dependencies"]["godot"]
+    assert dependency["features"] == (
+        ["api-custom", "double-precision"] if precision == "double" else ["api-4-6-2"]
+    )
+    config = read_toml(root / "rust/.cargo/config.toml")
+    if precision == "double":
+        assert config["env"]["GDRUST_GODOT_BIN"]["value"] == str(engine)
+    else:
+        assert "env" not in config
 
 
-def test_declining_confirmation_creates_nothing(tmp_path, external_tools):
+def test_interactive_defaults_create_standard_compatibility_project(
+    tmp_path, picker_input
+):
+    picker_input.send_text("\r\r\r")
+    result = CliRunner().invoke(
+        app, [], input=f"Default Game\n{tmp_path}\n\n"
+    )
+
+    assert result.exit_code == 0, result.output
+    root = tmp_path / "default-game"
+    project = read_godot_config(root / "godot/project.godot")
+    assert (
+        json.loads(project["rendering"]["renderer/rendering_method"])
+        == "gl_compatibility"
+    )
+    dependency = read_toml(root / "rust/Cargo.toml")["dependencies"]["godot"]
+    assert dependency["features"] == ["api-4-2"]
+
+
+def test_explicit_settings_skip_interactive_selection(tmp_path):
+    result = CliRunner().invoke(
+        app,
+        [
+            "Explicit Game", "--parent", str(tmp_path),
+            "--renderer", "compatibility", "--godot-version", "4.6.2",
+            "--double-precision", "--godot-bin", str(tmp_path / "engine"),
+        ],
+        input="y\n",
+    )
+
+    assert result.exit_code == 0, result.output
+    dependency = read_toml(
+        tmp_path / "explicit-game/rust/Cargo.toml"
+    )["dependencies"]["godot"]
+    assert dependency["features"] == ["api-custom", "double-precision"]
+
+
+def test_interactive_api_choices_follow_selected_crate(
+    tmp_path, registry_response, picker_input
+):
+    release = {
+        "vers": "0.4.5",
+        "yanked": False,
+        "features": {"api-4-1": [], "api-4-10": []},
+        "features2": {"api-4-6": []},
+    }
+    registry_response.side_effect = lambda *a, **kw: io.BytesIO(
+        json.dumps(release).encode()
+    )
+    # Enter selects the lowest supported API, not an unsupported default or 4.10.
+    picker_input.send_text("\r\r\r")
+    result = CliRunner().invoke(
+        app,
+        ["My Game", "--parent", str(tmp_path), "--godot-crate-version", "0.4.5"],
+        input="y\n",
+    )
+
+    assert result.exit_code == 0, result.output
+    dependency = read_toml(tmp_path / "my-game/rust/Cargo.toml")["dependencies"]["godot"]
+    assert dependency == {"version": "=0.4.5", "features": ["api-4-6"]}
+
+
+def test_declining_confirmation_creates_nothing(tmp_path, external_tools, picker_input):
+    picker_input.send_text("\r\r\r")
     result = CliRunner().invoke(
         app, ["My Game", "--parent", str(tmp_path)], input="n\n"
     )

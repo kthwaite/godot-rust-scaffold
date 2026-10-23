@@ -21,6 +21,7 @@ from typing import Annotated
 from urllib.error import URLError
 from urllib.request import urlopen
 
+import questionary
 import typer
 from jinja2 import Environment, StrictUndefined
 from rich.console import Console
@@ -30,7 +31,7 @@ from rich.table import Table
 
 from godot_rust_scaffold import resources
 
-app = typer.Typer(pretty_exceptions_enable=False, no_args_is_help=True)
+app = typer.Typer(pretty_exceptions_enable=False)
 console = Console(markup=False)
 errors = Console(stderr=True, markup=False)
 
@@ -68,23 +69,13 @@ def project_slug(name: str) -> tuple[str, str]:
     return slug, "game_" + slug.replace("-", "_")
 
 
-def validate_versions(
-    crate_version: str, godot_version: str, double_precision: bool
-) -> str:
-    """Verify published Cargo features before creating any project files."""
+def _crate_features(crate_version: str) -> dict[str, list[str]]:
+    """Fetch the published features for one stable, non-yanked crate release."""
     number = r"(?:0|[1-9][0-9]*)"
     if not re.fullmatch(rf"{number}\.{number}\.{number}", crate_version):
         raise ValueError(
             "Godot crate version must be an exact stable release, e.g. 0.5.5."
         )
-    if not re.fullmatch(rf"4\.{number}(?:\.{number})?", godot_version):
-        raise ValueError("Godot version must be 4.MINOR or 4.MINOR.PATCH, e.g. 4.6.")
-    parts = godot_version.split(".")
-    if int(parts[1]) < 2:
-        raise ValueError("This scaffold requires Godot 4.2 or newer.")
-    # Patch zero uses the minor-level feature (api-4-6, not api-4-6-0).
-    if len(parts) == 3 and parts[2] == "0":
-        godot_version = ".".join(parts[:2])
     try:
         with urlopen("https://index.crates.io/go/do/godot", timeout=20) as response:
             releases = [json.loads(line) for line in response if line.strip()]
@@ -101,7 +92,28 @@ def validate_versions(
         raise ValueError(
             f"godot crate {crate_version} is yanked; choose another release."
         )
-    features = release["features"] | release.get("features2", {})
+    return release["features"] | release.get("features2", {})
+
+
+def validate_versions(
+    crate_version: str,
+    godot_version: str,
+    double_precision: bool,
+    *,
+    features: dict[str, list[str]] | None = None,
+) -> str:
+    """Verify published Cargo features before creating any project files."""
+    number = r"(?:0|[1-9][0-9]*)"
+    if not re.fullmatch(rf"4\.{number}(?:\.{number})?", godot_version):
+        raise ValueError("Godot version must be 4.MINOR or 4.MINOR.PATCH, e.g. 4.6.")
+    parts = godot_version.split(".")
+    if int(parts[1]) < 2:
+        raise ValueError("This scaffold requires Godot 4.2 or newer.")
+    # Patch zero uses the minor-level feature (api-4-6, not api-4-6-0).
+    if len(parts) == 3 and parts[2] == "0":
+        godot_version = ".".join(parts[:2])
+    if features is None:
+        features = _crate_features(crate_version)
     api_version = (
         ".".join(godot_version.split(".")[:2]) if double_precision else godot_version
     )
@@ -320,6 +332,7 @@ def create_project(
 
 @app.command()
 def main(
+    ctx: typer.Context,
     name: Annotated[
         str | None, typer.Argument(help="Project title; prompted when omitted.")
     ] = None,
@@ -401,12 +414,65 @@ def main(
         if root.exists() or root.is_symlink():
             raise ValueError(f"Destination already exists; nothing was changed: {root}")
 
+        features = None
+        if not yes:
+            console.rule("Choose project settings")
+            source = ctx.get_parameter_source("renderer")
+            if source is not None and source.name == "DEFAULT":
+                renderer = Renderer(
+                    questionary.select(
+                        "Renderer",
+                        choices=[choice.value for choice in Renderer],
+                        default=renderer.value,
+                    ).unsafe_ask()
+                )
+            source = ctx.get_parameter_source("double_precision")
+            if source is not None and source.name == "DEFAULT":
+                double_precision = questionary.select(
+                    "Precision (f32 single / f64 double; double needs a custom engine)",
+                    choices=["single", "double"],
+                    default="single",
+                ).unsafe_ask() == "double"
+            source = ctx.get_parameter_source("godot_version")
+            if source is not None and source.name == "DEFAULT":
+                features = _crate_features(godot_crate_version)
+                versions = sorted(
+                    (
+                        feature.removeprefix("api-").replace("-", ".")
+                        for feature in features
+                        if re.fullmatch(r"api-4-\d+(?:-\d+)?", feature)
+                        and int(feature.split("-")[2]) >= 2
+                        and (
+                            not double_precision
+                            or "-".join(feature.split("-")[:3]) in features
+                        )
+                    ),
+                    key=lambda version: tuple(map(int, version.split("."))),
+                )
+                if not versions:
+                    raise ValueError(
+                        f"godot crate {godot_crate_version} has no supported Godot APIs."
+                    )
+                godot_version = questionary.select(
+                    "Godot API version",
+                    choices=versions,
+                    default=godot_version if godot_version in versions else versions[0],
+                ).unsafe_ask()
+            if double_precision and godot_bin is None:
+                console.print(
+                    "Double precision requires Godot built with precision=double "
+                    "and LLVM/libclang. The engine must match the API version exactly."
+                )
+                godot_bin = Path(
+                    Prompt.ask("Custom Godot executable", console=console)
+                )
+
         if double_precision and godot_bin is None:
             raise ValueError("--double-precision requires --godot-bin PATH.")
         if godot_bin is not None and not double_precision:
             raise ValueError("--godot-bin is only used with --double-precision.")
         godot_version = validate_versions(
-            godot_crate_version, godot_version, double_precision
+            godot_crate_version, godot_version, double_precision, features=features
         )
         if godot_bin is not None:
             godot_bin = validate_double_engine(godot_bin, godot_version)
