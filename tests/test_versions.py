@@ -174,3 +174,79 @@ def test_registry_failure_leaves_destination_untouched(tmp_path):
         assert result.exit_code == 1
         assert "crates.io" in result.output
         assert not (tmp_path / "offline-game").exists()
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        FileNotFoundError("missing engine"),
+        subprocess.CalledProcessError(1, ["godot"]),
+        subprocess.TimeoutExpired(["godot"], 30),
+    ],
+)
+def test_custom_engine_execution_failure_is_reported_as_validation_error(error):
+    with (
+        patch("godot_rust_scaffold.cli.subprocess.run", side_effect=error),
+        pytest.raises(ValueError) as failure,
+    ):
+        validate_double_engine(Path("/custom/godot"), "4.2")
+
+    assert failure.value.__cause__ is error
+
+
+@pytest.mark.parametrize(
+    "stdout",
+    [
+        "",
+        "Godot Engine v4.2.stable\n",
+        "GODOT_RUST_SCAFFOLD:not-json\n",
+        "GODOT_RUST_SCAFFOLD:{}\n",
+    ],
+)
+def test_custom_engine_requires_valid_version_and_precision_report(stdout):
+    result = subprocess.CompletedProcess([], 0, stdout, "")
+    with (
+        patch("godot_rust_scaffold.cli.subprocess.run", return_value=result),
+        pytest.raises(ValueError),
+    ):
+        validate_double_engine(Path("/custom/godot"), "4.2")
+
+
+@pytest.mark.parametrize(
+    ("requested", "reported"), [("4.2", "4.2.0"), ("4.2.2", "4.2.2")]
+)
+def test_custom_engine_accepts_exact_stable_double_build(
+    tmp_path, monkeypatch, requested, reported
+):
+    monkeypatch.chdir(tmp_path)
+    info = {"version": reported, "status": "stable", "double": True}
+    result = subprocess.CompletedProcess(
+        [],
+        0,
+        "Godot startup output\nGODOT_RUST_SCAFFOLD:" + json.dumps(info) + "\n",
+        "",
+    )
+    with patch("godot_rust_scaffold.cli.subprocess.run", return_value=result):
+        assert validate_double_engine(Path("engine/godot"), requested) == (
+            tmp_path / "engine/godot"
+        )
+
+
+def test_malformed_registry_response_is_rejected():
+    with (
+        patch("godot_rust_scaffold.cli.urlopen", return_value=io.BytesIO(b"not json")),
+        pytest.raises(ValueError),
+    ):
+        validate_versions("0.5.5", "4.2", False)
+
+
+def test_registry_allows_blank_lines_and_selects_requested_release():
+    older = {"vers": "0.4.5", "yanked": True, "features": {}}
+    selected = {
+        "vers": "0.5.5",
+        "yanked": False,
+        "features": {"api-4-2": [], "double-precision": [], "api-custom": []},
+    }
+    data = ("\n" + json.dumps(older) + "\n\n" + json.dumps(selected) + "\n").encode()
+    with patch("godot_rust_scaffold.cli.urlopen", return_value=io.BytesIO(data)):
+        assert validate_versions("0.5.5", "4.2", True) == "4.2"
