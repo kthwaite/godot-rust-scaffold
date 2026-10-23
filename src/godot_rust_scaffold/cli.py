@@ -267,6 +267,8 @@ def create_project(
             ("main.tscn", "godot/main.tscn"),
             ("game.gdextension.j2", "godot/game.gdextension"),
             ("extension_list.cfg", "godot/.godot/extension_list.cfg"),
+            ("rust_build/plugin.cfg", "godot/addons/rust_build/plugin.cfg"),
+            ("rust_build/plugin.gd", "godot/addons/rust_build/plugin.gd"),
         ):
             content = resource_root.joinpath(resource_name).read_text(encoding="utf-8")
             if resource_name.endswith(".j2"):
@@ -321,6 +323,7 @@ def create_project(
         f"\nCreated {root}\n"
         f"Open {godot / 'project.godot'} in Godot {godot_version}+ and press F6/F5.\n"
         "The Output panel should say: Hello from Rust! Your GDExtension is running.\n\n"
+        "Rebuild in Godot: click Build Rust; see the Rust Build bottom panel.\n"
         f"Rebuild: cd {shlex.quote(str(root / 'rust'))} && cargo build\n"
         "Release: cargo build --release (from rust/)\n"
         "Commit Cargo.lock; generated caches and build output are ignored.\n"

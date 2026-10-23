@@ -128,6 +128,47 @@ the project. See also the [crate's precision documentation](https://docs.rs/godo
 Crate overrides may require a newer Rust toolchain or changes to the starter Rust
 code; the final Cargo build checks compilation.
 
+## Build Rust inside Godot
+
+New projects include an enabled GDScript editor plugin in
+`godot/addons/rust_build/`. No Python process is needed after scaffolding.
+
+1. Save your Rust source files in your code editor and stop any running game.
+2. Click **Build Rust** in Godot's top toolbar.
+3. Open the **Rust Build** bottom panel for the result and compiler output.
+4. Run the game again to use the rebuilt library.
+
+Cargo runs on a worker thread so the editor stays responsive. Output, including
+compiler errors, appears when the process finishes, not as a live stream.
+Overlapping builds and starting a game during a build are blocked. This is a
+manual debug build; pressing Play does not automatically compile Rust.
+
+The plugin builds the sibling `rust/Cargo.toml`, explicitly loads
+`rust/.cargo/config.toml` when present, and writes to `rust/target`. This preserves
+the selected API/precision features and the custom Godot executable configured
+for double precision. Custom Cargo targets still need matching `.gdextension`
+paths.
+
+The **Cargo executable** field accepts an executable name or an absolute path,
+without shell quotes or arguments. It defaults to Cargo under `CARGO_HOME` or
+the usual `~/.cargo/bin` location when available, otherwise `cargo` on `PATH`.
+The value is saved when building, in Godot's local project metadata under
+`.godot/`, not in the shared project configuration.
+
+**A successful build does not mean the editor has reloaded the extension.**
+When supported by the engine/bindings combination, Godot's normal hot reload
+runs after switching away from the editor and back. Otherwise use
+**Save & Restart Editor** in the panel to save scenes and refresh editor classes.
+For example, Godot 4.7.2 disabled hot reload for the default API-4.2 extension
+during verification. Restarting the game loads the new library independently.
+See [godot-rust's reload guidance](https://godot-rust.github.io/book/intro/hello-world.html#the-gdextension-file).
+
+There is no build cancellation: closing the editor or disabling the plugin
+while a build is active waits for Cargo to finish. Wait for completion first.
+Existing generated projects are not modified by upgrading the CLI; to add the
+plugin, copy `addons/rust_build/` from a newly generated project's `godot/`
+directory and enable **Rust Build** under **Project → Project Settings → Plugins**.
+
 ## Development
 
 Install the project and development dependencies (including pytest and pytest-cov),

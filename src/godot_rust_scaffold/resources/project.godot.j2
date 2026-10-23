@@ -10,6 +10,9 @@ config/features=PackedStringArray("{{ godot_minor_version }}", "{{ renderer_feat
 window/size/viewport_width=960
 window/size/viewport_height=540
 
+[editor_plugins]
+enabled=PackedStringArray("res://addons/rust_build/plugin.cfg")
+
 [rendering]
 renderer/rendering_method="{{ rendering_method }}"
 renderer/rendering_method.mobile="{{ mobile_rendering_method }}"
