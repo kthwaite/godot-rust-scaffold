@@ -1,0 +1,7 @@
+[build]
+target-dir = "target"
+{% if double_precision %}
+
+[env]
+{{ godot_bin_env }} = { value = {{ godot_bin_literal }}, force = true }
+{% endif %}

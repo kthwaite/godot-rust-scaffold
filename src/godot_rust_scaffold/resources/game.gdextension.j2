@@ -1,0 +1,14 @@
+; Development paths only; move libraries inside res:// before exporting.
+[configuration]
+entry_symbol = "gdext_rust_init"
+compatibility_minimum = "{{ godot_version }}"
+reloadable = true
+
+[libraries]
+{% for platform, prefix, suffix in [("linux", "lib", "so"), ("windows", "", "dll"), ("macos", "lib", "dylib")] %}
+{% for profile in ["debug", "release"] %}
+{% for arch in ["x86_64", "arm64"] %}
+{{ platform }}.{{ profile }}.{{ arch }} = "res://../rust/target/{{ profile }}/{{ prefix }}{{ crate }}.{{ suffix }}"
+{% endfor %}
+{% endfor %}
+{% endfor %}

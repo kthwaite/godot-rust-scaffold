@@ -1,0 +1,11 @@
+[package]
+name = "{{ crate }}"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.94"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+godot = { version = "={{ crate_version }}", features = ["{{ api_feature }}"{% if double_precision %}, "double-precision"{% endif %}] }

@@ -1,0 +1,12 @@
+[gd_scene format=3]
+
+[node name="Main" type="HelloRust"]
+
+[node name="Greeting" type="Label" parent="."]
+offset_left = 40.0
+offset_top = 40.0
+offset_right = 760.0
+offset_bottom = 100.0
+theme_override_font_sizes/font_size = 28
+text = "Godot + Rust
+Check the Output panel for your Rust greeting."
